@@ -10,26 +10,21 @@
  */
 
 use SLiMS\Url;
+
 require_once SB.'admin/default/session_check.inc.php';
 
-// Cek dan ambil token CSRF
-$csrfToken = null;
-if (isset($_SESSION['csrf_token']['mainForm'])) {
-    $mainFormTokens = $_SESSION['csrf_token']['mainForm'];
-    $latestTokenData = end($mainFormTokens);
-    if ($latestTokenData && isset($latestTokenData['token'])) {
-        $csrfToken = $latestTokenData['token'];
-    }
-}
-
-if (is_null($csrfToken)) {
+if (!isset($_SESSION['csrf_token']) || !isset($_SESSION['csrf_token']['mainForm'])) {
     header('Content-Type: application/json');
     header('HTTP/1.0 403 Forbidden');
     die(json_encode(['success' => false, 'message' => __('Access denied: CSRF Token session (mainForm) not found.')]));
 }
 
+$mainFormTokens = $_SESSION['csrf_token']['mainForm'];
+$latestTokenData = end($mainFormTokens);
+$csrfToken = $latestTokenData['token'];
+
 define('CROPPIE', (string)'../../../plugins/'.basename(__DIR__).DS);
-$memberID = $_GET['itemID'] ?? null;
+$memberID = isset($_GET['itemID']) ? $_GET['itemID'] : null;
 $memberImage = 'person.png';
 
 if ($memberID) {
@@ -58,29 +53,22 @@ if (isset($_POST['image'])) {
         echo json_encode(['success' => false, 'message' => __('Access denied: Invalid or missing CSRF Token.')]);
         exit;
     }
-    
+
     $imageData = $_POST["image"];
-    $dataParts = explode(',', $imageData, 2); 
+    list($type, $imageData) = explode(';', $imageData);
+    list(, $imageData) = explode(',', $imageData);
+    $decodedData = base64_decode($imageData);
     
-    if (count($dataParts) === 2) {
-        $encodedData = $dataParts[1];
-        $decodedData = base64_decode($encodedData);
-        
-        $targetDir = IMGBS . 'persons/';
-        $filePath = $targetDir . $filenameToSave;
-        
-        if (file_put_contents($filePath, $decodedData) !== FALSE) {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => true, 'message' => __('Image updated successfully.')]);
-        } else {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => __('Failed to save file on the server.')]);
-        }
+    $targetDir = IMGBS . 'persons/';
+    $filePath = $targetDir . $filenameToSave;
+
+    if (file_put_contents($filePath, $decodedData) !== FALSE) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'message' => __('Image updated successfully.')]);
     } else {
-         header('Content-Type: application/json');
-         echo json_encode(['success' => false, 'message' => __('Invalid image data format.')]);
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => __('Failed to save file on the server.')]);
     }
-    
     exit;
 }
 
@@ -94,8 +82,8 @@ ob_start();
     <div class="row justify-content-md-center">
         <div class="col-6">
             <img id="image_demo"
-                  src="<?= SWB.'images/persons/'.$urlEncodedMemberImage.'?'.$currentTimestamp ?>"
-                  style="width:100%; max-width:0px; display: block; margin: 0 auto; visibility: hidden;"/>
+                 src="<?= SWB.'images/persons/'.$urlEncodedMemberImage.'?'.$currentTimestamp ?>"
+                 style="width:100%; max-width:0px; display: block; margin: 0 auto; visibility: hidden;"/>
         </div>
         <div class="col-6">
             <div class="row pb-3">
@@ -124,8 +112,8 @@ ob_start();
             type: 'square'
         },
         boundary: {
-            width: 350, 
-            height: 400 
+            width: 350,
+            height: 400
         }
     });
 
@@ -150,8 +138,8 @@ ob_start();
         $image_crop.croppie('result', {
             type: 'canvas',
             size: 'viewport',
-            format: 'jpeg', 
-            quality: 0.9 
+            format: 'jpeg',
+            quality: 0.9
         }).then(function(response){
             $.ajax({
                 url: window.location.href,
@@ -159,7 +147,7 @@ ob_start();
                 data: {
                     "image": response,
                     "filename": "<?=$htmlEscapedMemberImage?>",
-                    "csrf_token": "<?=$csrfToken?>" 
+                    "csrf_token": "<?=$csrfToken?>"
                 },
                 dataType: "json",
                 beforeSend: function() {
@@ -182,13 +170,12 @@ ob_start();
             });
         });
     });
-
 </script>
 <?php
 $content = ob_get_clean();
-
 $js = '<script type="text/javascript" src="'.JWB.'jquery.js"></script>
     <script type="text/javascript" src="'.JWB.'colorbox/jquery.colorbox-min.js"></script>
     <script type="text/javascript" src="'.JWB.'gui.js"></script>'."\n";
 $css = '<link rel="stylesheet" type="text/css" href="'.CROPPIE.'js/croppie/croppie.css"/>'."\n";
+
 require SB.'/admin/'.$sysconf['admin_template']['dir'].'/printed_page_tpl.php';
