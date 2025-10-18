@@ -1,13 +1,11 @@
 <?php
- /*
- * @package Crop and Resize Member Image
- * @author Heru Subekti <https://github.com/heroesoebekti/>
- * @copyright 2025 Heru Subekti
- * @license GPL-3.0-or-later
- * @Created by          : Heru Subekti
- * @Date                : 2025-10-15 21:30:00
- * @File name           : pop_image_edit.php
- */
+/*
+* @package Crop and Resize Image
+* @author Heru Subekti <https://github.com/heroesoebekti/>
+* @copyright 2025 Heru Subekti
+* @license GPL-3.0-or-later
+* @File name      : pop_image_edit.php
+*/
 
 use SLiMS\Url;
 
@@ -24,27 +22,53 @@ $latestTokenData = end($mainFormTokens);
 $csrfToken = $latestTokenData['token'];
 
 define('CROPPIE', (string)'../../../plugins/'.basename(__DIR__).DS);
-$memberID = isset($_GET['itemID']) ? $_GET['itemID'] : null;
-$memberImage = 'person.png';
 
-if ($memberID) {
-    $stmt = $dbs->prepare("SELECT member_image FROM member WHERE member_id = ?");
+$targetType = isset($_GET['image']) ? strtolower($_GET['image']) : 'member';
+$itemID = isset($_GET['itemID']) ? $_GET['itemID'] : null;
+$tableName = '';
+$columnName = '';
+$defaultImage = '';
+$imageDir = '';
+$viewportWidth = 150;
+$viewportHeight = 200;
+
+if ($targetType === 'biblio') {
+    $tableName = 'biblio';
+    $columnName = 'image';
+    $defaultImage = 'default.jpg';
+    $imageDir = IMGBS . 'docs/';
+    $imageWebPath = SWB . 'images/docs/';
+    $viewportWidth = 150; 
+    $viewportHeight = 220; 
+} else { // Default ke Member
+    $tableName = 'member';
+    $columnName = 'member_image';
+    $defaultImage = 'person.png';
+    $imageDir = IMGBS . 'persons/';
+    $imageWebPath = SWB . 'images/persons/';
+    $viewportWidth = 150; 
+    $viewportHeight = 200; 
+}
+
+$currentImageName = $defaultImage;
+
+if ($itemID && $tableName) {
+    $stmt = $dbs->prepare("SELECT {$columnName} FROM {$tableName} WHERE {$tableName}_id = ?");
     if ($stmt) {
-        $stmt->bind_param("s", $memberID);
+        $stmt->bind_param("s", $itemID);
         $stmt->execute();
-        $result = $stmt->get_result();
-
-        if ($result->num_rows > 0) {
-            $row = $result->fetch_row();
-            if (!empty($row[0])) {
-                $memberImage = $row[0];
+        $result = $stmt->get_result(); 
+        if ($result && $result->num_rows > 0) {
+            $row = $result->fetch_assoc();
+            if ($row && !empty($row[$columnName])) {
+                $currentImageName = $row[$columnName];
             }
         }
         $stmt->close();
     }
 }
 
-$filenameToSave = $memberImage;
+$filenameToSave = $currentImageName;
 
 if (isset($_POST['image'])) {
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $csrfToken) {
@@ -58,10 +82,7 @@ if (isset($_POST['image'])) {
     list($type, $imageData) = explode(';', $imageData);
     list(, $imageData) = explode(',', $imageData);
     $decodedData = base64_decode($imageData);
-    
-    $targetDir = IMGBS . 'persons/';
-    $filePath = $targetDir . $filenameToSave;
-
+    $filePath = $imageDir . $filenameToSave;
     if (file_put_contents($filePath, $decodedData) !== FALSE) {
         header('Content-Type: application/json');
         echo json_encode(['success' => true, 'message' => __('Image updated successfully.')]);
@@ -72,9 +93,10 @@ if (isset($_POST['image'])) {
     exit;
 }
 
-$urlEncodedMemberImage = urlencode($memberImage);
-$htmlEscapedMemberImage = htmlspecialchars($memberImage, ENT_QUOTES, 'UTF-8');
+$urlEncodedImage = urlencode($currentImageName);
+$htmlEscapedImage = htmlspecialchars($currentImageName, ENT_QUOTES, 'UTF-8');
 $currentTimestamp = date('his');
+$successRedirectURL = $targetType === 'biblio' ? MWB.'bibliography/index.php' : MWB.'membership/index.php';
 
 ob_start();
 ?>
@@ -82,15 +104,15 @@ ob_start();
     <div class="row justify-content-md-center">
         <div class="col-6">
             <img id="image_demo"
-                 src="<?= SWB.'images/persons/'.$urlEncodedMemberImage.'?'.$currentTimestamp ?>"
-                 style="width:100%; max-width:0px; display: block; margin: 0 auto; visibility: hidden;"/>
+                src="<?= $imageWebPath.$urlEncodedImage.'?'.$currentTimestamp ?>"
+                style="width:100%; max-width:0px; display: block; margin: 0 auto; visibility: hidden;"/>
         </div>
         <div class="col-6">
             <div class="row pb-3">
                 <div class="col-12 d-flex justify-content-center pt-3">
                     <img class="preview"
-                          src=""
-                          style="width:150px;height:200px;object-fit: cover;border: solid 4px #fff; border-radius: 12px; display: none;"/>
+                        src=""
+                        style="width:<?= $viewportWidth ?>px;height:<?= $viewportHeight ?>px;object-fit: cover;border: solid 4px #fff; border-radius: 12px; display: none;"/>
                 </div>
             </div>
             <div class="row pt-2">
@@ -107,8 +129,8 @@ ob_start();
     var $image_crop = $('#image_demo').croppie({
         enableExif: true,
         viewport: {
-            width: 150,
-            height: 200,
+            width: <?= $viewportWidth ?>,
+            height: <?= $viewportHeight ?>,
             type: 'square'
         },
         boundary: {
@@ -118,8 +140,8 @@ ob_start();
     });
 
     function loadDefaultPreview() {
-        const defaultImgSrc = '<?= SWB.'images/persons/'.$urlEncodedMemberImage.'?'.$currentTimestamp ?>';
-        if ('<?=$htmlEscapedMemberImage?>' !== 'person.png') {
+        const defaultImgSrc = '<?= $imageWebPath.$urlEncodedImage.'?'.$currentTimestamp ?>';
+        if ('<?=$htmlEscapedImage?>' !== '<?= $defaultImage ?>') {
             $('.preview').attr('src', defaultImgSrc).show();
         }
     }
@@ -146,7 +168,7 @@ ob_start();
                 type: "POST",
                 data: {
                     "image": response,
-                    "filename": "<?=$htmlEscapedMemberImage?>",
+                    "filename": "<?=$htmlEscapedImage?>",
                     "csrf_token": "<?=$csrfToken?>"
                 },
                 dataType: "json",
@@ -156,13 +178,13 @@ ob_start();
                 success: function(res) {
                     if(res.success) {
                         alert(res.message);
-                        parent.$('#mainContent').simbioAJAX('<?=MWB?>membership/index.php');
+                        parent.$('#mainContent').simbioAJAX('<?= $successRedirectURL ?>');
                     } else {
                         alert('<?= __('Update failed: ') ?>' + res.message);
                     }
                 },
                 error: function(xhr, status, error) {
-                     alert('<?= __('An AJAX error occurred. Please ensure you have a valid login session.') ?>');
+                    alert('<?= __('An AJAX error occurred. Please ensure you have a valid login session.') ?>');
                 },
                 complete: function() {
                     $('#update').attr('disabled', false).text('<?= __('Update') ?>');
@@ -173,9 +195,9 @@ ob_start();
 </script>
 <?php
 $content = ob_get_clean();
-$js = '<script type="text/javascript" src="'.JWB.'jquery.js"></script>
-    <script type="text/javascript" src="'.JWB.'colorbox/jquery.colorbox-min.js"></script>
-    <script type="text/javascript" src="'.JWB.'gui.js"></script>'."\n";
+$js =  '<script type="text/javascript" src="'.JWB.'jquery.js"></script>
+        <script type="text/javascript" src="'.JWB.'colorbox/jquery.colorbox-min.js"></script>
+        <script type="text/javascript" src="'.JWB.'gui.js"></script>'."\n";
 $css = '<link rel="stylesheet" type="text/css" href="'.CROPPIE.'js/croppie/croppie.css"/>'."\n";
 
 require SB.'/admin/'.$sysconf['admin_template']['dir'].'/printed_page_tpl.php';
